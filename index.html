@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>お買い物メモ</title>
+<style>
+  :root{
+    --bg:#F7F3EC; --card:#FFFFFF; --ink:#3B332A; --sub:#8A7D6D;
+    --accent:#D98E6A; --accent-soft:#F6E3D7; --line:#E7DCCB;
+    --done:#B4A894;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+    font-size:17px; line-height:1.5;}
+  header{background:var(--card); border-bottom:1px solid var(--line);
+    padding:14px 16px 10px; position:sticky; top:0; z-index:5;}
+  h1{font-size:21px; margin:0 0 10px; font-weight:700;}
+  .tabs{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{flex:0 0 auto; border:1.5px solid var(--line); background:var(--bg);
+    color:var(--ink); border-radius:999px; padding:8px 16px; font-size:16.5px;
+    cursor:pointer; white-space:nowrap;}
+  .tab.active{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700;}
+  .tab .cnt{font-size:13px; opacity:.85; margin-left:4px;}
+  .tab-tools{flex:0 0 auto; display:flex; gap:6px;}
+  .tool-btn{border:1.5px dashed var(--line); background:transparent; color:var(--sub);
+    border-radius:999px; padding:8px 12px; font-size:15px; cursor:pointer; white-space:nowrap;}
+  main{padding:14px 16px 120px; max-width:640px; margin:0 auto;}
+  .count{color:var(--sub); font-size:14.5px; margin:2px 2px 10px;}
+  ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px;}
+  li{background:var(--card); border:1px solid var(--line); border-radius:12px;
+    display:flex; align-items:center; min-height:54px; padding:6px 6px 6px 14px; cursor:pointer;}
+  li .txt{flex:1; font-size:18px; word-break:break-all; padding:6px 0;}
+  li.done .txt{text-decoration:line-through; color:var(--done);}
+  li .check{flex:0 0 auto; width:30px; height:30px; border-radius:50%;
+    border:2px solid var(--line); margin-right:10px; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:17px;}
+  li.done .check{background:var(--accent); border-color:var(--accent);}
+  li .del{flex:0 0 auto; border:none; background:transparent; color:var(--sub);
+    font-size:22px; width:44px; height:44px; cursor:pointer;}
+  .empty{color:var(--sub); text-align:center; padding:36px 0; font-size:16px;}
+  .clear-row{margin-top:16px; text-align:right;}
+  .clear-btn{border:1px solid var(--line); background:var(--card); color:var(--sub);
+    border-radius:999px; padding:8px 14px; font-size:14.5px; cursor:pointer;}
+  .inputbar{position:fixed; left:0; right:0; bottom:0; background:var(--card);
+    border-top:1px solid var(--line); padding:10px 12px calc(10px + env(safe-area-inset-bottom));}
+  .inputbar .inwrap{max-width:640px; margin:0 auto; display:flex; gap:8px;}
+  #newItem{flex:1; font-size:17px; padding:12px 14px; border:1.5px solid var(--line);
+    border-radius:12px; background:var(--bg); color:var(--ink); min-width:0;}
+  #newItem:focus{outline:none; border-color:var(--accent);}
+  #addBtn{flex:0 0 auto; background:var(--accent); color:#fff; border:none;
+    border-radius:12px; padding:12px 20px; font-size:17px; font-weight:700; cursor:pointer;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 お買い物メモ</h1>
+  <div class="tabs" id="tabs"></div>
+</header>
+<main>
+  <p class="count" id="count"></p>
+  <ul id="list"></ul>
+  <p class="empty" id="empty" hidden>まだ何もありません。<br>下の欄から追加してね。</p>
+  <div class="clear-row">
+    <button class="clear-btn" id="clearDone">取り消し線を全部消す</button>
+  </div>
+</main>
+<div class="inputbar">
+  <div class="inwrap">
+    <input id="newItem" type="text" placeholder="買うものを入力" autocomplete="off">
+    <button id="addBtn">追加</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+var KEY = "kaimono_memo_v1";
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function defaultData(){
+  return {
+    active: null,
+    tabs: [
+      { id: uid(), name: "サンディ", items: [] },
+      { id: uid(), name: "サンエー", items: [] },
+      { id: uid(), name: "ココカラファイン", items: [] }
+    ]
+  };
+}
+
+function load(){
+  try{
+    var raw = localStorage.getItem(KEY);
+    if(!raw) return defaultData();
+    var d = JSON.parse(raw);
+    if(!d || !Array.isArray(d.tabs) || d.tabs.length === 0) return defaultData();
+    d.tabs.forEach(function(t){
+      if(!Array.isArray(t.items)) t.items = [];
+      t.items = t.items.filter(function(it){ return it && typeof it.t === "string"; });
+    });
+    return d;
+  }catch(e){ return defaultData(); }
+}
+
+var data = load();
+if(!data.tabs.some(function(t){ return t.id === data.active; })){
+  data.active = data.tabs[0].id;
+}
+
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} }
+function curTab(){ return data.tabs.find(function(t){ return t.id === data.active; }); }
+
+function esc(s){
+  return s.replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+
+var tabsEl = document.getElementById("tabs");
+var listEl = document.getElementById("list");
+var countEl = document.getElementById("count");
+var emptyEl = document.getElementById("empty");
+var inputEl = document.getElementById("newItem");
+
+function render(){
+  // tabs
+  tabsEl.innerHTML = "";
+  data.tabs.forEach(function(t){
+    var rest = t.items.filter(function(it){ return !it.done; }).length;
+    var b = document.createElement("button");
+    b.className = "tab" + (t.id === data.active ? " active" : "");
+    b.innerHTML = esc(t.name) + '<span class="cnt">' + rest + "</span>";
+    b.addEventListener("click", function(){
+      data.active = t.id; save(); render();
+    });
+    tabsEl.appendChild(b);
+  });
+  var tools = document.createElement("span");
+  tools.className = "tab-tools";
+  var editB = document.createElement("button");
+  editB.className = "tool-btn"; editB.textContent = "タブ編集";
+  editB.addEventListener("click", editTab);
+  var addB = document.createElement("button");
+  addB.className = "tool-btn"; addB.textContent = "＋追加";
+  addB.addEventListener("click", addTab);
+  tools.appendChild(editB); tools.appendChild(addB);
+  tabsEl.appendChild(tools);
+
+  // list
+  var t = curTab();
+  listEl.innerHTML = "";
+  t.items.forEach(function(it){
+    var li = document.createElement("li");
+    if(it.done) li.className = "done";
+    var ck = document.createElement("span");
+    ck.className = "check"; ck.textContent = it.done ? "✓" : "";
+    var tx = document.createElement("span");
+    tx.className = "txt"; tx.textContent = it.t;
+    var del = document.createElement("button");
+    del.className = "del"; del.textContent = "×"; del.setAttribute("aria-label", "削除");
+    del.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      t.items = t.items.filter(function(x){ return x !== it; });
+      save(); render();
+    });
+    li.appendChild(ck); li.appendChild(tx); li.appendChild(del);
+    li.addEventListener("click", function(){
+      it.done = !it.done; save(); render();
+    });
+    listEl.appendChild(li);
+  });
+  var rest = t.items.filter(function(it){ return !it.done; }).length;
+  countEl.textContent = t.items.length === 0 ? "" :
+    "残り " + rest + " 個（全部で " + t.items.length + " 個）";
+  emptyEl.hidden = t.items.length !== 0;
+}
+
+function editTab(){
+  var t = curTab();
+  var name = prompt("タブの名前を変更", t.name);
+  if(name === null) return;
+  name = name.trim();
+  if(name){
+    t.name = name; save(); render();
+  }
+  // 名前を空にしてOKした場合は削除の確認
+  if(!name && confirm("このタブを削除しますか？（中のリストも消えます）")){
+    if(data.tabs.length <= 1){ alert("タブは最低1つ必要です"); return; }
+    data.tabs = data.tabs.filter(function(x){ return x.id !== t.id; });
+    data.active = data.tabs[0].id; save(); render();
+  }
+}
+
+function addTab(){
+  var name = prompt("新しいタブの名前（お店の名前など）", "");
+  if(name === null) return;
+  name = name.trim();
+  if(!name) return;
+  var t = { id: uid(), name: name, items: [] };
+  data.tabs.push(t); data.active = t.id; save(); render();
+}
+
+function addItem(){
+  var v = inputEl.value.trim();
+  if(!v) return;
+  curTab().items.push({ t: v, done: false });
+  inputEl.value = "";
+  save(); render();
+  inputEl.focus();
+}
+
+document.getElementById("addBtn").addEventListener("click", addItem);
+inputEl.addEventListener("keydown", function(e){
+  if(e.key === "Enter"){ e.preventDefault(); addItem(); }
+});
+document.getElementById("clearDone").addEventListener("click", function(){
+  var t = curTab();
+  var n = t.items.filter(function(it){ return it.done; }).length;
+  if(n === 0){ alert("取り消し線の項目はありません"); return; }
+  if(!confirm("取り消し線の " + n + " 個を消しますか？")) return;
+  t.items = t.items.filter(function(it){ return !it.done; });
+  save(); render();
+});
+
+save();
+render();
+</script>
+</body>
+</html>
